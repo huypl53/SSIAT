@@ -6,7 +6,7 @@
 
 - [model](trainer.py#L57) is load as [Adapter](#adapter)
 
-## [Trainer](models/SSITA_adapter.py#L20)
+## [SSITA](models/SSITA_adapter.py#L20)
 
 - `self._cur_task`: current selected task id
 - `self._network`: [SimpleVitNet](#simplevitnet)
@@ -19,6 +19,10 @@
 ### [self.incremental_train()](models/SSITA_adapter.py#L60)
 
 - `self._network`.update_fc(): create or update `sefl._network`
+
+### [self.\_train()](models/SSITA_adapter.py#L113)
+
+> To train the local classifier
 
 ## [SimpleVitNet](utils/inc_net.py#L161)
 
