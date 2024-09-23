@@ -73,7 +73,7 @@ class Learner(BaseLearner):
         print("The number of training dataset:", len(self.train_dataset))
 
         self.data_manager = data_manager
-        self.train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=n8)
+        self.train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=8)
         test_dataset = data_manager.get_dataset(np.arange(0, self._total_classes), source="test", mode="test")
         self.test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=8)
         train_dataset_for_protonet = data_manager.get_dataset(np.arange(0, self._total_classes), source="train",
@@ -172,8 +172,8 @@ class Learner(BaseLearner):
 
                 loss=loss_cos(logits[:, self._known_classes:], targets - self._known_classes)
 
-                if self.prev_logits is not None:
-                    self.ope_loss(self.prev_logits[:, :self._known_classes], logits[:, :self._known_classes], is_new=True)
+                if self.prev_logits is not None and self._known_classes and self.prev_logits.numel():
+                    loss += self.ope_loss(self.prev_logits[:, :self._known_classes], logits[:, :self._known_classes], targets[:self._known_classes], 0, is_new=True)
                 
                 optimizer.zero_grad()
                 loss.backward()
