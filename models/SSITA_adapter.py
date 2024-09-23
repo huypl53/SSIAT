@@ -172,7 +172,7 @@ class Learner(BaseLearner):
 
                 loss=loss_cos(logits[:, self._known_classes:], targets - self._known_classes)
 
-                if self.prev_logits is not None and self._known_classes and self.prev_logits.numel():
+                if self.prev_logits is not None and self._known_classes and self.prev_logits.numel() and logits.numel() and targets.numel():
                     loss += self.ope_loss(self.prev_logits[:, :self._known_classes], logits[:, :self._known_classes], targets[:self._known_classes], 0, is_new=True)
                 
                 optimizer.zero_grad()
