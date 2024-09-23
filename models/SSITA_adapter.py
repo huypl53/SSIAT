@@ -14,6 +14,7 @@ from models.base import BaseLearner
 from utils.toolkit import target2onehot, tensor2numpy
 from utils.loss import AngularPenaltySMLoss
 import math
+from models.ope import OPELoss
 # tune the model at first session with adapter, and then conduct simplecil.
 num_workers = 8
 
@@ -35,6 +36,8 @@ class Learner(BaseLearner):
 
         self.logit_norm = None
         self.tuned_epochs = None
+        self.prev_logits = None
+        self.ope_loss = OPELoss()
 
     def after_task(self):
         self._known_classes = self._total_classes
@@ -168,6 +171,9 @@ class Learner(BaseLearner):
                 logits = self._network(inputs)["logits"]
 
                 loss=loss_cos(logits[:, self._known_classes:], targets - self._known_classes)
+
+                if self.prev_logits is not None:
+                    self.ope_loss(self.prev_logits[:, :self._known_classes], logits[:, :self._known_classes], is_new=True)
                 
                 optimizer.zero_grad()
                 loss.backward()
@@ -176,6 +182,8 @@ class Learner(BaseLearner):
                 _, preds = torch.max(logits, dim=1)
                 correct += preds.eq(targets.expand_as(preds)).cpu().sum()
                 total += len(targets)
+
+                self.prev_logits = logits
 
             scheduler.step()
 
