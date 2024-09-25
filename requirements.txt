@@ -1,0 +1,9 @@
+easydict==1.13
+matplotlib==3.9.2
+numpy==1.26.4
+Pillow==10.4.0
+scipy==1.14.1
+timm==0.6.12
+torch==2.2.0
+torchvision==0.17.0
+tqdm==4.65.0
