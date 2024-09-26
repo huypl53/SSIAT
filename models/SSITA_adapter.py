@@ -166,14 +166,22 @@ class Learner(BaseLearner):
             losses = 0.0
             correct, total = 0, 0
 
+            iters = 0
+            ope_iters = 0
             for i, (_, inputs, targets) in enumerate(train_loader):
+                iters += 1
                 inputs, targets = inputs.to(self._device), targets.to(self._device)
                 logits = self._network(inputs)["logits"]
 
                 loss=loss_cos(logits[:, self._known_classes:], targets - self._known_classes)
 
-                if self.prev_logits is not None and self._known_classes and self.prev_logits.numel() and logits.numel() and targets.numel():
-                    loss += self.ope_loss(self.prev_logits[:, :self._known_classes], logits[:, :self._known_classes], targets[:self._known_classes], 0, is_new=True)
+                min_dim = 0 if self.prev_logits is None else min(self.prev_logits.shape[0], logits.shape[0])
+                if not min_dim:
+                    pass
+                else:
+                    # logging.info('No ope loss for this iterations ')
+                    ope_iters += 1
+                    loss += self.ope_loss(self.prev_logits[:min_dim, ...], logits[:min_dim,...], targets[:min_dim], 0, is_new=True)
                 
                 optimizer.zero_grad()
                 loss.backward()
@@ -189,8 +197,10 @@ class Learner(BaseLearner):
 
             train_acc = np.around(tensor2numpy(correct) * 100 / total, decimals=2)
             test_acc = self._compute_accuracy(self._network, test_loader)
-            info = "Task {}, Epoch {}/{} => Loss {:.3f}, Train_accy {:.2f}, Test_accy {:.2f}".format(
+            info = "Task {}, run OPE {}/{} iters, Epoch {}/{} => Loss {:.3f}, Train_accy {:.2f}, Test_accy {:.2f}".format(
                 self._cur_task,
+                ope_iters, 
+                iters,
                 epoch + 1,
                 self.tuned_epochs,
                 losses / len(train_loader),
