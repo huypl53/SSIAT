@@ -181,7 +181,8 @@ class Learner(BaseLearner):
                 else:
                     # logging.info('No ope loss for this iterations ')
                     ope_iters += 1
-                    loss += self.ope_loss(self.prev_logits[:min_dim, ...], logits[:min_dim,...], targets[:min_dim], 0, is_new=True)
+                    ope, _, _ = self.ope_loss(self.prev_logits[:min_dim, ...], logits[:min_dim,...], targets[:min_dim], 0, is_new=True)
+                    loss += ope
                 
                 optimizer.zero_grad()
                 loss.backward()
@@ -191,7 +192,8 @@ class Learner(BaseLearner):
                 correct += preds.eq(targets.expand_as(preds)).cpu().sum()
                 total += len(targets)
 
-                self.prev_logits = logits
+                self.prev_logits = logits.detach()
+                # self.prev_logits.requires_grad = False
 
             scheduler.step()
 
