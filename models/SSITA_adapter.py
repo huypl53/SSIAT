@@ -36,7 +36,6 @@ class Learner(BaseLearner):
 
         self.logit_norm = None
         self.tuned_epochs = None
-        self.prev_logits = None
         self.ope_loss = OPELoss()
 
     def after_task(self):
@@ -161,6 +160,7 @@ class Learner(BaseLearner):
     def _init_train(self, train_loader, test_loader, optimizer, scheduler):
         prog_bar = tqdm(range(self.tuned_epochs))
         loss_cos=AngularPenaltySMLoss(loss_type='cosface', eps=1e-7, s=self.args["scale"], m=self.args["margin"])
+        prev_logits = None
         for _, epoch in enumerate(prog_bar):
             self._network.train()
             losses = 0.0
@@ -175,13 +175,13 @@ class Learner(BaseLearner):
 
                 loss=loss_cos(logits[:, self._known_classes:], targets - self._known_classes)
 
-                min_dim = 0 if self.prev_logits is None else min(self.prev_logits.shape[0], logits.shape[0])
+                min_dim = 0 if prev_logits is None else min(prev_logits.shape[0], logits.shape[0])
                 if not min_dim:
                     pass
                 else:
                     # logging.info('No ope loss for this iterations ')
                     ope_iters += 1
-                    ope, _, _ = self.ope_loss(self.prev_logits[:min_dim, ...], logits[:min_dim,...], targets[:min_dim], 0, is_new=True)
+                    ope, _, _ = self.ope_loss(prev_logits[:min_dim, ...], logits[:min_dim,...], targets[:min_dim], 0, is_new=True)
                     loss += ope
                 
                 optimizer.zero_grad()
@@ -192,8 +192,8 @@ class Learner(BaseLearner):
                 correct += preds.eq(targets.expand_as(preds)).cpu().sum()
                 total += len(targets)
 
-                self.prev_logits = logits.detach()
-                # self.prev_logits.requires_grad = False
+                prev_logits = logits.detach()
+                # prev_logits.requires_grad = False
 
             scheduler.step()
 
