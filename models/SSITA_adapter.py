@@ -180,9 +180,10 @@ class Learner(BaseLearner):
                     pass
                 else:
                     # logging.info('No ope loss for this iterations ')
-                    ope_iters += 1
                     ope, _, _ = self.ope_loss(prev_logits[:min_dim, ...], logits[:min_dim,...], targets[:min_dim], 0, is_new=True)
-                    loss += ope
+                    if ope:
+                        loss += ope
+                        ope_iters += 1
                 
                 optimizer.zero_grad()
                 loss.backward()

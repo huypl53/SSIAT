@@ -44,6 +44,9 @@ class OPELoss(nn.Module):
             nonZero_prototype_z1 = old_prototype_z1[nonZeroRows]
             nonZero_prototype_z2 = old_prototype_z2[nonZeroRows]
 
+        if not nonZero_prototype_z1.numel() or not nonZero_prototype_z2.numel():
+            return None, None, None
+
         nonZero_prototype_z1 = F.normalize(nonZero_prototype_z1)
         nonZero_prototype_z2 = F.normalize(nonZero_prototype_z2)
 
