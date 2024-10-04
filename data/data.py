@@ -1,7 +1,9 @@
 import numpy as np
 from torchvision import datasets, transforms
 from utils.toolkit import split_images_labels
+import os
 
+BASE_DIR = '/data/'
 
 class iData(object):
     train_trsf = []
@@ -50,8 +52,8 @@ class iCIFAR224(iData):
     class_order = np.arange(100).tolist()
 
     def download_data(self):
-        train_dataset = datasets.cifar.CIFAR100("./data", train=True, download=True)
-        test_dataset = datasets.cifar.CIFAR100("./data", train=False, download=True)
+        train_dataset = datasets.cifar.CIFAR100(os.path.join(BASE_DIR, 'CIFAR'), train=True, download=True)
+        test_dataset = datasets.cifar.CIFAR100(os.path.join(BASE_DIR, 'CIFAR'), train=False, download=True)
         self.train_data, self.train_targets = train_dataset.data, np.array(
             train_dataset.targets
         )
@@ -74,8 +76,8 @@ class iImageNetR(iData):
 
     def download_data(self):
         # assert 0, "You should specify the folder of your dataset"
-        train_dir = "/data/datasets/CIL/imagenet-r/train/"
-        test_dir = "/data/datasets/CIL/imagenet-r/test/"
+        train_dir = os.path.join(BASE_DIR, "CIL/imagenet-r/train/" )
+        test_dir = os.path.join(BASE_DIR, "CIL/imagenet-r/test/")
 
         train_dset = datasets.ImageFolder(train_dir)
         test_dset = datasets.ImageFolder(test_dir)
@@ -95,8 +97,8 @@ class iImageNetA(iData):
 
     def download_data(self):
         # assert 0, "You should specify the folder of your dataset"
-        train_dir = "/data/datasets/CIL/imagenet-a/imagenet-a/train/"
-        test_dir = "/data/datasets/CIL/imagenet-a/imagenet-a/test/"
+        train_dir = os.path.join(BASE_DIR, "CIL/imagenet-a/imagenet-a/train/")
+        test_dir = os.path.join(BASE_DIR, "CIL/imagenet-a/imagenet-a/test/" )
 
         train_dset = datasets.ImageFolder(train_dir)
         test_dset = datasets.ImageFolder(test_dir)
@@ -117,8 +119,8 @@ class CUB(iData):
 
     def download_data(self):
         # assert 0, "You should specify the folder of your dataset"
-        train_dir = "/data/datasets/CIL/cub/train/"
-        test_dir = "/data/datasets/CIL/cub/test/"
+        train_dir = os.path.join(BASE_DIR, "CIL/cub/train/" )
+        test_dir = os.path.join(BASE_DIR, "CIL/cub/test/" )
 
         train_dset = datasets.ImageFolder(train_dir)
         test_dset = datasets.ImageFolder(test_dir)
@@ -139,8 +141,8 @@ class vtab(iData):
 
     def download_data(self):
         # assert 0, "You should specify the folder of your dataset"
-        train_dir = "/data/datasets/CIL/vtab/vtab/train/"
-        test_dir = "/data/datasets/CIL/vtab/vtab/test/"
+        train_dir = os.path.join(BASE_DIR, "CIL/vtab/vtab/train/" )
+        test_dir = os.path.join(BASE_DIR, "CIL/vtab/vtab/test/" )
 
         train_dset = datasets.ImageFolder(train_dir)
         test_dset = datasets.ImageFolder(test_dir)
