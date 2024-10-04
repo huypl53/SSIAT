@@ -178,7 +178,7 @@ class SimpleVitNet(BaseNet):
     def forward(self, x, bcb_no_grad=False, fc_only=False):
         x = self.convnet(x)
         out = self.fc(x)
-        # out.update(x)
+        out.update({'features': x})
         return out
 
     def ca_forward(self, x):
