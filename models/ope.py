@@ -10,13 +10,16 @@ class OPELoss(nn.Module):
         self.only_old_proto = only_old_proto
 
     def cal_prototype(self, z1, z2, y):
-        start_i = 0
-        end_i = z1.shape[0]
+        # start_i = 0
+        # cls_num = z1.shape[0]
+
+        uniq_classes = torch.unique(y)
+        cls_num = uniq_classes.shape[0]
         dim = z1.shape[1]
-        current_classes_mean_z1 = torch.zeros((end_i, dim), device=z1.device)
-        current_classes_mean_z2 = torch.zeros((end_i, dim), device=z1.device)
-        for i in range(start_i, end_i):
-            indices = y == i
+        current_classes_mean_z1 = torch.zeros((cls_num, dim), device=z1.device)
+        current_classes_mean_z2 = torch.zeros((cls_num, dim), device=z1.device)
+        for i, cls_id in enumerate(uniq_classes):
+            indices = y == cls_id
             if not any(indices):
                 continue
             t_z1 = z1[indices]
