@@ -12,23 +12,26 @@ from utils.inc_net import SimpleVitNet
 from torch.distributions.multivariate_normal import MultivariateNormal
 from models.base import BaseLearner
 from utils.toolkit import target2onehot, tensor2numpy
-from utils.loss import AngularPenaltySMLoss
+from utils.loss import AngularPenaltySMLoss, SupervisedContrastiveLoss
 import math
-from models.ope import OPELoss
+
 # tune the model at first session with adapter, and then conduct simplecil.
 num_workers = 8
+
 
 class Learner(BaseLearner):
     def __init__(self, args):
         super().__init__(args)
-        if 'adapter' not in args["convnet_type"]:
-            raise NotImplementedError('Adapter requires Adapter backbone')
+        if "adapter" not in args["convnet_type"]:
+            raise NotImplementedError("Adapter requires Adapter backbone")
         self._network = SimpleVitNet(args, True)
         self.batch_size = args["batch_size"]
         self.init_lr = args["init_lr"]
 
-        self.weight_decay = args["weight_decay"] if args["weight_decay"] is not None else 0.0005
-        self.min_lr = args['min_lr'] if args['min_lr'] is not None else 1e-8
+        self.weight_decay = (
+            args["weight_decay"] if args["weight_decay"] is not None else 0.0005
+        )
+        self.min_lr = args["min_lr"] if args["min_lr"] is not None else 1e-8
         self.args = args
 
         self._old_most_sentive = []
@@ -36,11 +39,9 @@ class Learner(BaseLearner):
 
         self.logit_norm = None
         self.tuned_epochs = None
-        self.ope_loss = OPELoss()
 
     def after_task(self):
         self._known_classes = self._total_classes
-
 
     def extract_features(self, trainloader, model, args):
         model = model.eval()
@@ -61,54 +62,75 @@ class Learner(BaseLearner):
 
     def incremental_train(self, data_manager):
         self._cur_task += 1
-        self._total_classes = self._known_classes + data_manager.get_task_size(self._cur_task)
+        self._total_classes = self._known_classes + data_manager.get_task_size(
+            self._cur_task
+        )
         self._network.update_fc(data_manager.get_task_size(self._cur_task))
-        logging.info("Learning on {}-{}".format(self._known_classes, self._total_classes))
-    
-        train_dataset = data_manager.get_dataset(np.arange(self._known_classes, self._total_classes), source="train",
-                                                 mode="train")
+        logging.info(
+            "Learning on {}-{}".format(self._known_classes, self._total_classes)
+        )
+
+        train_dataset = data_manager.get_dataset(
+            np.arange(self._known_classes, self._total_classes),
+            source="train",
+            mode="train",
+        )
 
         self.train_dataset = train_dataset
         print("The number of training dataset:", len(self.train_dataset))
 
         self.data_manager = data_manager
-        self.train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=8)
-        test_dataset = data_manager.get_dataset(np.arange(0, self._total_classes), source="test", mode="test")
-        self.test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=8)
-        train_dataset_for_protonet = data_manager.get_dataset(np.arange(0, self._total_classes), source="train",
-                                                              mode="test")
-
+        self.train_loader = DataLoader(
+            train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=8
+        )
+        test_dataset = data_manager.get_dataset(
+            np.arange(0, self._total_classes), source="test", mode="test"
+        )
+        self.test_loader = DataLoader(
+            test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=8
+        )
+        train_dataset_for_protonet = data_manager.get_dataset(
+            np.arange(0, self._total_classes), source="train", mode="test"
+        )
 
         if len(self._multiple_gpus) > 1:
-            print('Multiple GPUs')
+            print("Multiple GPUs")
             self._network = nn.DataParallel(self._network, self._multiple_gpus)
 
-      
-        if self._cur_task >0:
+        if self._cur_task > 0:
             self._network.to(self._device)
-            train_embeddings_old, _ = self.extract_features(self.train_loader, self._network, None)
+            train_embeddings_old, _ = self.extract_features(
+                self.train_loader, self._network, None
+            )
 
         self._train(self.train_loader, self.test_loader)
-        
+
         if len(self._multiple_gpus) > 1:
             self._network = self._network.module
 
-      
-        if self._cur_task >0:
-            train_embeddings_new, _ = self.extract_features(self.train_loader, self._network, None)
-            old_class_mean = self._class_means[:self._known_classes]
-            old_class_mean_copy=copy.deepcopy(old_class_mean)
-            gap = self.displacement(train_embeddings_old, train_embeddings_new, old_class_mean, 4.0)
-            if self.args['ssca'] is True:
-                old_class_mean +=gap
-                self._class_means[:self._known_classes] = old_class_mean
+        if self._cur_task > 0:
+            train_embeddings_new, _ = self.extract_features(
+                self.train_loader, self._network, None
+            )
+            old_class_mean = self._class_means[: self._known_classes]
+            old_class_mean_copy = copy.deepcopy(old_class_mean)
+            gap = self.displacement(
+                train_embeddings_old, train_embeddings_new, old_class_mean, 4.0
+            )
+            if self.args["ssca"] is True:
+                old_class_mean += gap
+                self._class_means[: self._known_classes] = old_class_mean
 
         self._network.fc.backup()
         self._compute_class_mean(data_manager, check_diff=False, oracle=False)
         task_size = data_manager.get_task_size(self._cur_task)
 
-        if self._cur_task>0 and self.args['ca_epochs']>0 and self.args['ca'] is True:
-            self._stage2_compact_classifier(task_size, self.args['ca_epochs'])
+        if (
+            self._cur_task > 0
+            and self.args["ca_epochs"] > 0
+            and self.args["ca"] is True
+        ):
+            self._stage2_compact_classifier(task_size, self.args["ca_epochs"])
             if len(self._multiple_gpus) > 1:
                 self._network = self._network.module
 
@@ -117,57 +139,95 @@ class Learner(BaseLearner):
         if self._cur_task == 0:
             self.tuned_epochs = self.args["init_epochs"]
             param_groups = [
-                {'params': self._network.convnet.blocks[-1].parameters(), 'lr': 0.01,
-                 'weight_decay': self.args['weight_decay']},
-
-                {'params': self._network.convnet.blocks[:-1].parameters(), 'lr': 0.01,
-                 'weight_decay': self.args['weight_decay']},
-
-                {'params': self._network.fc.parameters(), 'lr': 0.01, 'weight_decay': self.args['weight_decay']}
+                {
+                    "params": self._network.convnet.blocks[-1].parameters(),
+                    "lr": 0.01,
+                    "weight_decay": self.args["weight_decay"],
+                },
+                {
+                    "params": self._network.convnet.blocks[:-1].parameters(),
+                    "lr": 0.01,
+                    "weight_decay": self.args["weight_decay"],
+                },
+                {
+                    "params": self._network.fc.parameters(),
+                    "lr": 0.01,
+                    "weight_decay": self.args["weight_decay"],
+                },
             ]
 
-            if self.args['optimizer'] == 'sgd':
-                optimizer = optim.SGD(param_groups, momentum=0.9, lr=self.init_lr, weight_decay=self.weight_decay)
+            if self.args["optimizer"] == "sgd":
+                optimizer = optim.SGD(
+                    param_groups,
+                    momentum=0.9,
+                    lr=self.init_lr,
+                    weight_decay=self.weight_decay,
+                )
 
-            elif self.args['optimizer'] == 'adam':
-                optimizer = optim.AdamW(self._network.parameters(), lr=self.init_lr, weight_decay=self.weight_decay)
+            elif self.args["optimizer"] == "adam":
+                optimizer = optim.AdamW(
+                    self._network.parameters(),
+                    lr=self.init_lr,
+                    weight_decay=self.weight_decay,
+                )
 
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.tuned_epochs,
-                                                             eta_min=self.min_lr)
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=self.tuned_epochs, eta_min=self.min_lr
+            )
             self._init_train(train_loader, test_loader, optimizer, scheduler)
-            
+
         else:
-            self.tuned_epochs = self.args['inc_epochs']
+            self.tuned_epochs = self.args["inc_epochs"]
             # show total parameters and trainable parameters
             param_groups = []
 
             param_groups.append(
-                {'params': self._network.convnet.parameters(), 'lr': 0.01, 'weight_decay': self.args['weight_decay']})
+                {
+                    "params": self._network.convnet.parameters(),
+                    "lr": 0.01,
+                    "weight_decay": self.args["weight_decay"],
+                }
+            )
             param_groups.append(
-                {'params': self._network.fc.parameters(), 'lr': 0.01, 'weight_decay': self.args['weight_decay']})
+                {
+                    "params": self._network.fc.parameters(),
+                    "lr": 0.01,
+                    "weight_decay": self.args["weight_decay"],
+                }
+            )
 
+            if self.args["optimizer"] == "sgd":
+                optimizer = optim.SGD(
+                    param_groups,
+                    momentum=0.9,
+                    lr=self.init_lr,
+                    weight_decay=self.weight_decay,
+                )
 
-            if self.args['optimizer'] == 'sgd':
-                optimizer = optim.SGD(param_groups, momentum=0.9, lr=self.init_lr, weight_decay=self.weight_decay)
+            elif self.args["optimizer"] == "adam":
+                optimizer = optim.AdamW(
+                    self._network.parameters(),
+                    lr=self.init_lr,
+                    weight_decay=self.weight_decay,
+                )
 
-            elif self.args['optimizer'] == 'adam':
-                optimizer = optim.AdamW(self._network.parameters(), lr=self.init_lr, weight_decay=self.weight_decay)
-
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.tuned_epochs,
-                                                             eta_min=self.min_lr)
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=self.tuned_epochs, eta_min=self.min_lr
+            )
             self._init_train(train_loader, test_loader, optimizer, scheduler)
 
     def _init_train(self, train_loader, test_loader, optimizer, scheduler):
         prog_bar = tqdm(range(self.tuned_epochs))
-        loss_cos=AngularPenaltySMLoss(loss_type='cosface', eps=1e-7, s=self.args["scale"], m=self.args["margin"])
-        prev_features = None
+        loss_cos = AngularPenaltySMLoss(
+            loss_type="cosface", eps=1e-7, s=self.args["scale"], m=self.args["margin"]
+        )
+        contrastive_loss = SupervisedContrastiveLoss()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
             losses = 0.0
             correct, total = 0, 0
 
             iters = 0
-            ope_iters = 0
             for i, (_, inputs, targets) in enumerate(train_loader):
                 iters += 1
                 inputs, targets = inputs.to(self._device), targets.to(self._device)
@@ -175,18 +235,13 @@ class Learner(BaseLearner):
                 logits = output["logits"]
                 features = output["features"]
 
-                loss=loss_cos(logits[:, self._known_classes:], targets - self._known_classes)
+                contrs_loss = contrastive_loss(features, targets)
 
-                min_dim = 0 if prev_features is None else min(prev_features.shape[0], features.shape[0])
-                if not min_dim:
-                    pass
-                else:
-                    # logging.info('No ope loss for this iterations ')
-                    ope, _, _ = self.ope_loss(prev_features[:min_dim, ...], features[:min_dim,...], targets[:min_dim], 0, is_new=True)
-                    if ope:
-                        loss += ope
-                        ope_iters += 1
-                
+                cos_loss = loss_cos(
+                    logits[:, self._known_classes :], targets - self._known_classes
+                )
+                loss = contrs_loss + cos_loss
+
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -195,17 +250,12 @@ class Learner(BaseLearner):
                 correct += preds.eq(targets.expand_as(preds)).cpu().sum()
                 total += len(targets)
 
-                prev_features = features.detach()
-                # prev_logits.requires_grad = False
-
             scheduler.step()
 
             train_acc = np.around(tensor2numpy(correct) * 100 / total, decimals=2)
             test_acc = self._compute_accuracy(self._network, test_loader)
-            info = "Task {}, run OPE {}/{} iters, Epoch {}/{} => Loss {:.3f}, Train_accy {:.2f}, Test_accy {:.2f}".format(
+            info = "Task {}  Epoch {}/{} => Loss {:.3f}, Train_accy {:.2f}, Test_accy {:.2f}".format(
                 self._cur_task,
-                ope_iters, 
-                iters,
                 epoch + 1,
                 self.tuned_epochs,
                 losses / len(train_loader),
@@ -222,7 +272,10 @@ class Learner(BaseLearner):
         finetune_block = []
         ratio_list = []
         for block in self._update_grads[self._cur_task].keys():
-            ratio = self._update_grads[self._cur_task][block] / self._update_grads[self._cur_task - 1][block]
+            ratio = (
+                self._update_grads[self._cur_task][block]
+                / self._update_grads[self._cur_task - 1][block]
+            )
             ratio_list.append(ratio)
             if ratio >= 0.9 and ratio <= 1.1:
                 finetune_block.append(block)
@@ -247,18 +300,33 @@ class Learner(BaseLearner):
         self._network.eval()
         sentive_network = copy.deepcopy(self._network)
         param_groups = [
-            {'params': sentive_network.convnet.parameters(), 'lr': 0.01, 'weight_decay': self.args['weight_decay']},
-            {'params': sentive_network.fc.parameters(), 'lr': 0.01, 'weight_decay': self.args['weight_decay']}
+            {
+                "params": sentive_network.convnet.parameters(),
+                "lr": 0.01,
+                "weight_decay": self.args["weight_decay"],
+            },
+            {
+                "params": sentive_network.fc.parameters(),
+                "lr": 0.01,
+                "weight_decay": self.args["weight_decay"],
+            },
         ]
 
-        if self.args['optimizer'] == 'sgd':
-            optimizer = optim.SGD(param_groups, momentum=0.9, lr=self.init_lr, weight_decay=self.weight_decay)
+        if self.args["optimizer"] == "sgd":
+            optimizer = optim.SGD(
+                param_groups,
+                momentum=0.9,
+                lr=self.init_lr,
+                weight_decay=self.weight_decay,
+            )
 
         update_magnitudes = {}
         for i, (_, inputs, targets) in enumerate(self.train_loader):
             inputs, targets = inputs.to(self._device), targets.to(self._device)
             logits = sentive_network(inputs)["logits"]
-            loss = F.cross_entropy(logits[:, self._known_classes:], targets - self._known_classes)
+            loss = F.cross_entropy(
+                logits[:, self._known_classes :], targets - self._known_classes
+            )
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -266,24 +334,32 @@ class Learner(BaseLearner):
             for j, (name, param) in enumerate(sentive_network.named_parameters()):
                 if "adapt" in name:
                     if name in update_magnitudes:
-                        update_magnitudes[name] +=  (param.grad**2)# torch.norm(param.grad) / sum(param.shape)
+                        update_magnitudes[name] += (
+                            param.grad**2
+                        )  # torch.norm(param.grad) / sum(param.shape)
                     else:
-                        update_magnitudes[name] =  (param.grad**2)#torch.norm(param.grad) / sum(param.shape)
+                        update_magnitudes[name] = (
+                            param.grad**2
+                        )  # torch.norm(param.grad) / sum(param.shape)
         grad_shapes = {}
         grad_shapes_int = {}
         for key in update_magnitudes.keys():
-                grad_shapes[key] = update_magnitudes[key].shape
-                grad_shapes_int[key] = np.cumprod(list(update_magnitudes[key].shape))[-1]
+            grad_shapes[key] = update_magnitudes[key].shape
+            grad_shapes_int[key] = np.cumprod(list(update_magnitudes[key].shape))[-1]
         # sort different block
-        large_tensor = torch.cat([update_magnitudes[key].flatten() for key in grad_shapes.keys()])
-        _, indexes = large_tensor.topk(math.ceil(0.0001* large_tensor.shape[0]))
+        large_tensor = torch.cat(
+            [update_magnitudes[key].flatten() for key in grad_shapes.keys()]
+        )
+        _, indexes = large_tensor.topk(math.ceil(0.0001 * large_tensor.shape[0]))
         print(indexes)
 
         # Build up masks for unstructured tuning
-        tmp_large_tensor = torch.zeros_like(large_tensor, device='cuda')
-        tmp_large_tensor[indexes] = 1.
+        tmp_large_tensor = torch.zeros_like(large_tensor, device="cuda")
+        tmp_large_tensor[indexes] = 1.0
 
-        tmp_large_tensor_list = tmp_large_tensor.split([shape for shape in grad_shapes_int.values()])
+        tmp_large_tensor_list = tmp_large_tensor.split(
+            [shape for shape in grad_shapes_int.values()]
+        )
 
         structured_param_num = 0
         structured_names = []
@@ -300,9 +376,14 @@ class Learner(BaseLearner):
             cur_param_num = grad_sum.item()
 
             unstructured_param_num += grad_sum.item()
-            unstructured_name_shapes[key] = tmp_large_tensor_list[i].view(grad_shapes[key]).shape
-            unstructured_name_shapes_int[key] = np.cumprod(list(update_magnitudes[key].shape))[-1]
-            unstructured_grad_mask[key] = tmp_large_tensor_list[i].view(grad_shapes[key])
+            unstructured_name_shapes[key] = (
+                tmp_large_tensor_list[i].view(grad_shapes[key]).shape
+            )
+            unstructured_name_shapes_int[key] = np.cumprod(
+                list(update_magnitudes[key].shape)
+            )[-1]
+            unstructured_grad_mask[key] = tmp_large_tensor_list[i].view(
+                grad_shapes[key]
+            )
 
-        return unstructured_grad_mask #most_sentive
-
+        return unstructured_grad_mask  # most_sentive
