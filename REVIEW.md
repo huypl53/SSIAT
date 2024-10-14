@@ -6,11 +6,17 @@
 
 - [model](trainer.py#L57) is load as [Adapter](#adapter)
 
-## [SSITA](models/SSITA_adapter.py#L20)
+## [Learner - SSITA](models/SSITA_adapter.py#L20)
 
 - `self._cur_task`: current selected task id
 - `self._network`: [SimpleVitNet](#simplevitnet)
 - Every time adapter get a new task (contain new classes), it call [self.incremental_train()](#selfincremental_train)
+
+### [self._known_classes](models/SSITA_adapter.py#L40)
+
+### [self._total_classes](models/SSITA_adapter.py#L62)
+
+- This is updated everytime [self.incremental_train](#selfincremental_train)
 
 ### [self.\_network](models/SSITA_adapter.py#L25)
 
@@ -31,9 +37,9 @@
 
 ## [SimpleContinualLinear](network/classifier.py#L8)
 
-> contains `self.heads`. This could be `local classifier`
+> contains `self.heads`. This could be `local classifier`. `Each head` has out dim equal to the `number of classes` corresponding to each session.
 
-- [self.update()](network/classifier.py#L35): take arg `nb_classes`, `insert a new head` that outputs [ ..., `nb_classes` ] tensor
+- [self.update()](network/classifier.py#L35): take arg `nb_classes`, `insert a new head` that outputs [ ..., `nb_classes` ] tensor corresponding to new session. Previous heads are frozen
 
 - `self.forward`: forward feature i-th according to i-th of `self.heads` then concates all the output to a logit
 
@@ -49,4 +55,8 @@ args: - init_cls: 20 - increment: 20
 
 - `self.nb_tasks`: `len(self._increments)`
 - `self._class_order`: order of classes; has length of number of class
-- `self._increments`: an array contain the number of class corresponding to a session
+- `self._increments`: an array with size N_session*N_class_per_session size contain the number of class (default 20) corresponding to session
+
+### [self._setup_data()](data/data_manager.py#L138)
+
+This method is call first to `prepare the order` of unique classes
