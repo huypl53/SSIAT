@@ -69,7 +69,7 @@ class AngularPenaltySMLoss(nn.Module):
 
 
 class SupervisedContrastiveLoss(torch.nn.Module):
-    def __init__(self, temperature=0.07):
+    def __init__(self, temperature=0.05):
         super(SupervisedContrastiveLoss, self).__init__()
         self.temperature = temperature
 
@@ -83,6 +83,8 @@ class SupervisedContrastiveLoss(torch.nn.Module):
         exp_sim = torch.exp(similarity_matrix)
         pos_sim = exp_sim * positive_mask.float()
         pos_sum = pos_sim.sum(dim=1)
+        if pos_sum == 0:
+            return None
         denom_sum = exp_sim.sum(dim=1) - torch.exp(similarity_matrix.diag())
         loss = -torch.log(pos_sum / denom_sum)
         return loss.mean()

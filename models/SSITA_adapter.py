@@ -37,6 +37,7 @@ class Learner(BaseLearner):
         self._old_most_sentive = []
         self._update_grads = {}
 
+        self.contrastive_loss = SupervisedContrastiveLoss()
         self.logit_norm = None
         self.tuned_epochs = None
 
@@ -221,7 +222,6 @@ class Learner(BaseLearner):
         loss_cos = AngularPenaltySMLoss(
             loss_type="cosface", eps=1e-7, s=self.args["scale"], m=self.args["margin"]
         )
-        contrastive_loss = SupervisedContrastiveLoss()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
             losses = 0.0
@@ -235,12 +235,13 @@ class Learner(BaseLearner):
                 logits = output["logits"]
                 features = output["features"]
 
-                contrs_loss = contrastive_loss(features, targets)
-
+                contrs_loss = self.contrastive_loss(features, targets)
                 cos_loss = loss_cos(
                     logits[:, self._known_classes :], targets - self._known_classes
                 )
-                loss = contrs_loss + cos_loss
+                loss = cos_loss
+                if contrs_loss is not None:
+                    loss += contrs_loss
 
                 optimizer.zero_grad()
                 loss.backward()
