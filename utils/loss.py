@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch import optim
 from torch.nn import functional as F
+import logging
 
 
 class AngularPenaltySMLoss(nn.Module):
@@ -83,8 +84,11 @@ class SupervisedContrastiveLoss(torch.nn.Module):
         exp_sim = torch.exp(similarity_matrix)
         pos_sim = exp_sim * positive_mask.float()
         pos_sum = pos_sim.sum(dim=1)
-        if pos_sum == 0:
-            return None
-        denom_sum = exp_sim.sum(dim=1) - torch.exp(similarity_matrix.diag())
-        loss = -torch.log(pos_sum / denom_sum)
+        # denom_sum = exp_sim.sum(dim=1) - torch.exp(similarity_matrix.diag())
+        denom_sum = exp_sim.sum(dim=1) - exp_sim.diag()
+        loss = -torch.log(pos_sum[pos_sum != 0] / denom_sum[pos_sum != 0])
+        if torch.isinf(loss).any():
+            logging.warning("`inf` detected in contrative loss. Ignoring.")
+            # loss = torch.where(torch.isinf(loss), torch.tensor(1e8).to(loss.device), loss)
+            loss = torch.where(torch.isinf(loss), torch.tensor(0).to(loss.device), loss)
         return loss.mean()
